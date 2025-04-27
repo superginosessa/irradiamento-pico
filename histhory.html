@@ -1,0 +1,140 @@
+<!-- history.html -->
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Storico Produzione – Biccari Luigi</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f7fa; margin:0; padding:20px; }
+    h1, h2 { color: #2c3e50; margin:10px 0; }
+    #monthNav { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:20px; }
+    #monthNav button {
+      flex:1 0 20%; min-width:100px; background:#bdc3c7; color:#2c3e50;
+      border:none; padding:8px; border-radius:5px; cursor:pointer;
+    }
+    #monthNav button.active { background:#3498db; color:#fff; }
+    #monthNav button:hover:not(.active){background:#95a5a6;}
+    .table-container{overflow-x:auto;margin-bottom:30px;}
+    table{width:100%;border-collapse:collapse;background:#fff;}
+    th,td{border:1px solid #ccc;padding:8px;text-align:center;}
+    thead{background:#ecf0f1;} tfoot{background:#d0d7de;font-weight:bold;}
+    #btnHome{background:#3498db;color:#fff;border:none;padding:8px 12px;
+      border-radius:5px;cursor:pointer;margin-bottom:20px;}
+    #btnHome:hover{background:#2980b9;}
+  </style>
+</head>
+<body>
+  <h1>Storico Produzione – Biccari Luigi</h1>
+  <button id="btnHome" onclick="location.href='index.html'">← Torna alla Home</button>
+
+  <div id="monthNav"></div>
+
+  <section id="monthDetails" style="display:none;">
+    <h2 id="monthTitle">Mese di …</h2>
+    <div class="table-container">
+      <table id="daysTable">
+        <thead>
+          <tr><th>Data</th><th>Irr. Medio (W/m²)</th><th>Produzione (500 kW)</th></tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr><th>Media Mensile</th><td id="monthlyAvg">–</td><td id="monthlyProd">–</td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    // Config ThingSpeak
+    const CHANNEL_ID = '2937124';
+    const READ_KEY   = '7P43RPFWKD0BMT5M';
+
+    // Definisci 12 mesi (modifica anni se serve)
+    const months = [
+      {label:'Gennaio 2025',   value:'2025-01'},
+      {label:'Febbraio 2025',  value:'2025-02'},
+      {label:'Marzo 2025',     value:'2025-03'},
+      {label:'Aprile 2025',    value:'2025-04'},
+      {label:'Maggio 2025',    value:'2025-05'},
+      {label:'Giugno 2025',    value:'2025-06'},
+      {label:'Luglio 2025',    value:'2025-07'},
+      {label:'Agosto 2025',    value:'2025-08'},
+      {label:'Settembre 2025', value:'2025-09'},
+      {label:'Ottobre 2025',   value:'2025-10'},
+      {label:'Novembre 2025',  value:'2025-11'},
+      {label:'Dicembre 2025',  value:'2025-12'}
+    ];
+
+    const monthNav      = document.getElementById('monthNav');
+    const monthDetails  = document.getElementById('monthDetails');
+    const monthTitle    = document.getElementById('monthTitle');
+    const daysTbody     = document.querySelector('#daysTable tbody');
+    const monthlyAvgEl  = document.getElementById('monthlyAvg');
+    const monthlyProdEl = document.getElementById('monthlyProd');
+
+    // Crea pulsanti mese
+    months.forEach((m, i) => {
+      const btn = document.createElement('button');
+      btn.innerText       = m.label;
+      btn.dataset.value   = m.value;
+      btn.addEventListener('click', ()=> selectMonth(i));
+      monthNav.appendChild(btn);
+    });
+
+    async function selectMonth(idx) {
+      // evidenzia attivo
+      Array.from(monthNav.children)
+        .forEach((b,i)=> b.classList.toggle('active', i===idx));
+
+      const {value,label} = months[idx];
+      monthTitle.innerText = `Mese di ${label}`;
+      monthDetails.style.display = 'block';
+
+      // build URL TS con start/end (1→31)
+      const start = `${value}-01`;
+      const end   = `${value}-31`;
+      const url = `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json`
+                + `?api_key=${READ_KEY}&start=${start}&end=${end}&results=8000`;
+
+      try {
+        const res = await fetch(url);
+        const js  = await res.json();
+        // raggruppa per data
+        const groups = {};
+        (js.feeds||[]).forEach(f=>{
+          const day = f.created_at.slice(0,10);
+          groups[day] = groups[day]||[];
+          groups[day].push(Number(f.field1));
+        });
+
+        // popola tabella
+        daysTbody.innerHTML = '';
+        let sumAvg=0, sumProd=0, cnt=0;
+        Object.keys(groups).sort().forEach(day=>{
+          const arr = groups[day];
+          const avg = arr.reduce((a,b)=>a+b,0)/arr.length;
+          const prod= avg/1000*500;
+          sumAvg += avg;
+          sumProd+= prod;
+          cnt++;
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${day}</td>
+            <td>${avg.toFixed(1)}</td>
+            <td>${prod.toFixed(1)}</td>`;
+          daysTbody.appendChild(tr);
+        });
+
+        monthlyAvgEl.innerText  = cnt? (sumAvg/cnt).toFixed(1): '–';
+        monthlyProdEl.innerText = sumProd.toFixed(1);
+      } catch(e) {
+        console.error('Errore fetch history:', e);
+      }
+    }
+
+    // carica mese corrente
+    selectMonth(new Date().getMonth());
+  </script>
+</body>
+</html>

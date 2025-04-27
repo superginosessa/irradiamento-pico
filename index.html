@@ -1,0 +1,156 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitoraggio Irraggiamento Solare</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f7fa;
+      margin: 0; padding: 20px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    h1 {
+      color: #2c3e50;
+      margin: 0;
+    }
+    #datetime {
+      text-align: right;
+      font-size: 0.9rem;
+      color: #34495e;
+    }
+    .box {
+      background: #ecf0f1;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 10px;
+    }
+    #irrChart {
+      max-width: 600px;
+      width: 100%;
+      height: auto;
+      margin: 0 auto 20px;
+    }
+    #btnHistory {
+      background: #3498db;
+      color: #fff;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #btnHistory:hover {
+      background: #2980b9;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Biccari Luigi</h1>
+    <div id="datetime">
+      <div id="date"></div>
+      <div id="clock"></div>
+    </div>
+  </div>
+
+  <div class="box">
+    <strong>Irraggiamento attuale:</strong> <span id="irr">–</span> W/m²<br/>
+    <strong>Produzione teorica 500 kW:</strong> <span id="prod">–</span> kW
+  </div>
+
+  <canvas id="irrChart"></canvas>
+
+  <button id="btnHistory" onclick="location.href='history.html'">
+    Storico Produzione
+  </button>
+
+  <script>
+    // 1) Orologio e data
+    function updateDateTime() {
+      const now = new Date();
+      document.getElementById('clock').innerText = now.toLocaleTimeString();
+      document.getElementById('date').innerText = now.toLocaleDateString('it-IT', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+      });
+    }
+    setInterval(updateDateTime, 1000);
+    updateDateTime();
+
+    // 2) Config ThingSpeak
+    const CHANNEL_ID = '2937124';
+    const READ_KEY   = '7P43RPFWKD0BMT5M';
+    const RESULTS    = 96; // 15' * 24h
+
+    // 3) Chart.js init
+    const ctx = document.getElementById('irrChart').getContext('2d');
+    const irrChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [{
+        label: 'Irraggiamento (W/m²)',
+        data: [],
+        backgroundColor: 'rgba(241, 196, 15, 0.2)',
+        borderColor: 'rgba(241, 196, 15, 1)',
+        borderWidth: 2,
+        pointRadius: 4,
+        tension: 0.3
+      }]},
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            title: { display: true, text: 'Ora' },
+            min: '05:00', max: '21:00',
+            ticks: { autoSkip: false, maxRotation: 0 }
+          },
+          y: {
+            beginAtZero: true,
+            suggestedMax: 1200,
+            title: { display: true, text: 'W/m²' }
+          }
+        },
+        plugins: { legend: { display: false } },
+        layout: { padding: { top:10, bottom:10 } }
+      }
+    });
+
+    // 4) Carica dati da ThingSpeak e aggiorna
+    async function fetchDataAndUpdate() {
+      try {
+        const url = `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json`
+                  + `?api_key=${READ_KEY}&results=${RESULTS}`;
+        const res = await fetch(url);
+        const js  = await res.json();
+        const feeds = js.feeds || [];
+
+        const labels = feeds.map(f =>
+          new Date(f.created_at)
+          .toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})
+        );
+        const values = feeds.map(f => Number(f.field1));
+        const latest = values.length ? values[values.length-1] : 0;
+
+        irrChart.data.labels = labels;
+        irrChart.data.datasets[0].data = values;
+        irrChart.update();
+
+        document.getElementById('irr').innerText = latest;
+        document.getElementById('prod').innerText =
+          ((latest/1000)*500).toFixed(1);
+      } catch(e) {
+        console.error('Fetch error:', e);
+      }
+    }
+
+    fetchDataAndUpdate();
+    setInterval(fetchDataAndUpdate, 15 * 60 * 1000);
+  </script>
+</body>
+</html>
